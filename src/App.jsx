@@ -98,6 +98,8 @@ function MainApp() {
   const [selected,      setSelected]      = useState(null);
   const [purchaseAmt,   setPurchaseAmt]   = useState("");
   const [purchaseMsg,   setPurchaseMsg]   = useState(null);
+  const [useAmt,        setUseAmt]        = useState("");
+  const [useMsg,        setUseMsg]        = useState(null);
   const [newCust,       setNewCust]       = useState({name:"",email:"",phone:""});
   const [addMsg,        setAddMsg]        = useState(null);
   const [cartAmt,       setCartAmt]       = useState("");
@@ -194,6 +196,19 @@ function MainApp() {
     setPurchaseMsg({type:"success",text:`✅ +${fmt(earned)}€ en cagnotte pour un achat de ${fmt(amount)}€ !`});
     setPurchaseAmt("");
     setTimeout(()=>setPurchaseMsg(null),4000);
+  }
+
+  function useCagnotte(){
+    const amount=parseFloat(useAmt);
+    if(!selected) return setUseMsg({type:"error",text:"Sélectionne un client."});
+    if(isNaN(amount)||amount<=0) return setUseMsg({type:"error",text:"Montant invalide."});
+    if(amount>selected.cagnotte) return setUseMsg({type:"error",text:`Cagnotte insuffisante ! Maximum : ${fmt(selected.cagnotte)}€`});
+    const updated={...selected, cagnotte:parseFloat((selected.cagnotte-amount).toFixed(2))};
+    setCustomers(prev=>prev.map(c=>c.id===selected.id?updated:c));
+    setSelected(updated);
+    setUseMsg({type:"success",text:`✅ ${fmt(amount)}€ utilisés ! Cagnotte restante : ${fmt(updated.cagnotte)}€`});
+    setUseAmt("");
+    setTimeout(()=>setUseMsg(null),4000);
   }
 
   function rollDice(){
@@ -548,6 +563,40 @@ function MainApp() {
               </div>
             )}
             {purchaseMsg&&<div style={S.msg(purchaseMsg.type)}>{purchaseMsg.text}</div>}
+          </div>}
+
+          {/* Utiliser la cagnotte */}
+          {selected&&<div style={{...S.sec,background:"#9B51E008",border:"1px solid #9B51E033"}}>
+            <div style={S.stitle}>🎁 Utiliser la Cagnotte — {selected.name}</div>
+            <div style={{background:C.cardLight,borderRadius:"10px",padding:"10px 14px",marginBottom:"12px",fontSize:"13px",display:"flex",alignItems:"center",gap:"10px"}}>
+              <span style={{fontSize:"24px"}}>{getTier(selected.cagnotte).emoji}</span>
+              <div>
+                <div style={{color:C.muted,fontSize:"11px"}}>Cagnotte disponible</div>
+                <div style={{fontSize:"22px",fontWeight:"bold",color:getTier(selected.cagnotte).color}}>{fmt(selected.cagnotte)}€</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:"10px"}}>
+              <input style={{...S.input,flex:1}} type="number" placeholder={`Montant à utiliser (max. ${fmt(selected.cagnotte)}€)`} value={useAmt} onChange={e=>setUseAmt(e.target.value)} />
+              <button style={S.btn(C.purple)} onClick={useCagnotte}>Utiliser</button>
+            </div>
+            {useAmt&&parseFloat(useAmt)>0&&parseFloat(useAmt)<=selected.cagnotte&&(
+              <div style={{fontSize:"12px",color:C.yellow,marginTop:"8px"}}>
+                💡 Après utilisation : <strong style={{color:C.green}}>{fmt(selected.cagnotte-parseFloat(useAmt))}€</strong> restants
+              </div>
+            )}
+            {useMsg&&<div style={S.msg(useMsg.type)}>{useMsg.text}</div>}
+            {/* Boutons rapides */}
+            <div style={{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}}>
+              <div style={{fontSize:"11px",color:C.muted,width:"100%"}}>Utilisation rapide :</div>
+              {[1,2,5].map(a=>selected.cagnotte>=a&&(
+                <button key={a} style={{...S.btn(C.cardLight),fontSize:"11px",padding:"6px 12px",border:`1px solid #ffffff20`}} onClick={()=>{setUseAmt(String(a));}}>
+                  {a}€
+                </button>
+              ))}
+              <button style={{...S.btn(C.cardLight),fontSize:"11px",padding:"6px 12px",border:`1px solid #ffffff20`}} onClick={()=>setUseAmt(fmt(selected.cagnotte))}>
+                Tout ({fmt(selected.cagnotte)}€)
+              </button>
+            </div>
           </div>}
           <div style={S.sec}>
             <div style={S.stitle}>📊 Simulateur — 5% en Cagnotte</div>
