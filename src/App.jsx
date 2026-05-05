@@ -131,6 +131,8 @@ function MainApp() {
   const [deleteConfirm,setDeleteConfirm]= useState(null);
   const [searchQuery,  setSearchQuery]  = useState("");
   const [copiedId,     setCopiedId]     = useState(null);
+  const [sendingId,    setSendingId]    = useState(null);
+  const [sendMsg,      setSendMsg]      = useState(null);
 
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
@@ -257,6 +259,32 @@ function MainApp() {
   }
 
   // ── Emails ──
+  // ── Envoi email via Resend ──
+  const [sending,    setSending]    = useState(false);
+  const [sendResult, setSendResult] = useState(null);
+
+  async function sendEmail(to, subject, body) {
+    if (!to) return setSendResult({ type:"error", text:"Adresse email manquante !" });
+    setSending(true); setSendResult(null);
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, subject, body }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        setSendResult({ type:"success", text:`✅ Email envoyé à ${to} !` });
+        setTimeout(() => setSendResult(null), 5000);
+      } else {
+        setSendResult({ type:"error", text:`❌ Erreur : ${data.error}` });
+      }
+    } catch {
+      setSendResult({ type:"error", text:"❌ Erreur de connexion" });
+    }
+    setSending(false);
+  }
+
   function generateEmail(type, customer) {
     const c = customer || selected; if (!c) return;
     const tier = getTier(c.cagnotte), first = c.name.split(" ")[0], code = genCode("CANDY");
@@ -286,6 +314,29 @@ function MainApp() {
     navigator.clipboard?.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  // ── Envoi email via Resend ──
+  async function sendEmail(to, subject, body, id) {
+    setSendingId(id);
+    setSendMsg(null);
+    try {
+      const r = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, body }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        setSendMsg({ type: 'success', text: `✅ Email envoyé à ${to} !` });
+      } else {
+        setSendMsg({ type: 'error', text: `❌ Erreur : ${data.error}` });
+      }
+    } catch {
+      setSendMsg({ type: 'error', text: '❌ Erreur de connexion' });
+    }
+    setSendingId(null);
+    setTimeout(() => setSendMsg(null), 5000);
   }
 
   // ── Scanner ──
@@ -725,7 +776,15 @@ function MainApp() {
                 {emailTpl && <>
                   <div style={{ fontWeight:"bold", fontSize:"12px", marginTop:"14px", color:C.yellow }}>📩 Objet : {emailTpl.subject}</div>
                   <div style={{ background:C.cardLight, borderRadius:"10px", padding:"12px", fontSize:"12px", lineHeight:"1.8", whiteSpace:"pre-wrap", border:"1px solid #ffffff15", marginTop:"6px" }}>{emailTpl.body}</div>
-                  <button style={{ ...S.btn(C.muted), marginTop:"8px", fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
+                  <div style={{ display:"flex", gap:"8px", marginTop:"8px", flexWrap:"wrap" }}>
+                    <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
+                    <button style={{ ...S.btn(sendingId===selected?.id?C.muted:C.green), fontSize:"11px" }}
+                      disabled={sendingId===selected?.id}
+                      onClick={() => sendEmail(selected.email, emailTpl.subject, emailTpl.body, selected.id)}>
+                      {sendingId===selected?.id ? "⏳ Envoi..." : "📧 Envoyer à "+selected.name.split(" ")[0]}
+                    </button>
+                  </div>
+                  {sendMsg && <div style={S.msg(sendMsg.type)}>{sendMsg.text}</div>}
                 </>}
               </div>
               <div style={S.sec}>
@@ -766,12 +825,20 @@ function MainApp() {
                         <span style={{ fontSize:"18px" }}>{tier.emoji}</span>
                         <div><div style={{ fontWeight:"bold", fontSize:"12px" }}>{c.name}</div><div style={{ fontSize:"10px", color:C.muted }}>{c.email}</div></div>
                       </div>
-                      <button style={{ ...S.btn(copiedId===c.id?C.green:C.purple), fontSize:"10px", padding:"5px 10px" }} onClick={() => copyEmail(full, c.id)}>
-                        {copiedId===c.id?"✅ Copié !":"📋 Copier"}
-                      </button>
+                      <div style={{ display:"flex", gap:"6px" }}>
+                        <button style={{ ...S.btn(copiedId===c.id?C.green:C.cardLight), fontSize:"10px", padding:"5px 10px", border:`1px solid #ffffff20` }} onClick={() => copyEmail(full, c.id)}>
+                          {copiedId===c.id?"✅":"📋"}
+                        </button>
+                        <button style={{ ...S.btn(sendingId===c.id?C.muted:C.green), fontSize:"10px", padding:"5px 10px" }}
+                          disabled={sendingId===c.id}
+                          onClick={() => sendEmail(c.email, groupTpl.subject, body, c.id)}>
+                          {sendingId===c.id?"⏳":"📧 Envoyer"}
+                        </button>
+                      </div>
                     </div>
                   </div>;
                 })}
+                {sendMsg && <div style={S.msg(sendMsg.type)}>{sendMsg.text}</div>}
               </div>
             )}
           </>}
