@@ -136,7 +136,13 @@ function MainApp() {
   const [scannerStarted, setScannerStarted] = useState(false);
   const scannerRef = useRef(null);
 
-  useEffect(() => { if (tab !== "scanner") stopScanner(); }, [tab]);
+  useEffect(() => { 
+    return () => { stopScanner(); };
+  }, []);
+
+  useEffect(() => { 
+    if (tab !== "scanner") stopScanner(); 
+  }, [tab]);
 
   async function stopScanner() {
     if (scannerRef.current) {
@@ -144,7 +150,13 @@ function MainApp() {
       scannerRef.current = null;
     }
     setScanActive(false);
-    setScannerStarted(false);
+    setScanLoading(false);
+  }
+
+  function resetScanner() {
+    stopScanner();
+    setScanResult(null);
+    setScanError(null);
   }
 
   async function startScanner() {
@@ -167,24 +179,31 @@ function MainApp() {
             { facingMode: "environment" },
             { fps: 10, qrbox: { width: 250, height: 250 } },
             (qrCode) => {
-              if (qrCode?.startsWith("MUNCHY-CLIENT-")) {
-                const id = parseInt(qrCode.replace("MUNCHY-CLIENT-", ""), 10);
+              console.log("QR scanné:", qrCode);
+              if (qrCode && qrCode.includes("MUNCHY-CLIENT-")) {
+                const parts = qrCode.split("MUNCHY-CLIENT-");
+                const id = parseInt(parts[parts.length - 1], 10);
                 const found = customers.find(c => c.id === id);
-                setScanResult(found ? { type:"found", customer:found } : { type:"unknown" });
+                setScanResult(found ? { type:"found", customer:found } : { type:"unknown", raw:qrCode });
                 setSelected(found || null);
+                stopScanner();
+              } else {
+                setScanResult({ type:"unknown", raw:qrCode });
                 stopScanner();
               }
             },
             () => {}
           );
         } catch(e) {
+          console.error("Scanner error:", e);
           setScanActive(false);
-          setScanError("Accès caméra refusé. Autorise la caméra dans les paramètres de ton navigateur.");
+          setScanLoading(false);
+          setScanError("Accès caméra refusé. Autorise la caméra dans les paramètres Safari.");
         }
-      }, 300);
-    } catch {
+      }, 500);
+    } catch(e) {
       setScanLoading(false);
-      setScanError("Impossible de charger le scanner. Vérifie ta connexion.");
+      setScanError("Impossible de charger le scanner.");
     }
   }
   useEffect(() => {
@@ -635,7 +654,12 @@ function MainApp() {
               </div>
             </>}
             {scanResult && (() => {
-              if (scanResult.type === "unknown") return <div style={S.msg("error")}>QR non reconnu.</div>;
+              if (scanResult.type === "unknown") return (
+                <div>
+                  <div style={S.msg("error")}>❌ QR non reconnu — ce n'est pas une carte Munchy's</div>
+                  <button style={{ ...S.btn(C.purple), marginTop:"10px", width:"100%" }} onClick={resetScanner}>📷 Réessayer</button>
+                </div>
+              );
               const c = customers.find(x => x.id === scanResult.customer.id) || scanResult.customer;
               const tier = getTier(c.cagnotte);
               return <div>
@@ -654,7 +678,7 @@ function MainApp() {
                 <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
                   <button style={S.btn(C.green)} onClick={() => { setSelected(c); setTab("achat"); }}>💰 Achat</button>
                   <button style={S.btn(C.purple)} onClick={() => { setSelected(c); setTab("emails"); }}>📧 Email</button>
-                  <button style={S.btn(C.blue)} onClick={() => { setScanResult(null); startScanner(); }}>📷 Rescanner</button>
+                  <button style={S.btn(C.blue)} onClick={resetScanner}>📷 Nouveau scan</button>
                 </div>
               </div>;
             })()}
