@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://swrpladhwaspibpoegwn.supabase.co";
@@ -127,19 +127,66 @@ function MainApp() {
   const [scanResult,   setScanResult]   = useState(null);
   const [scanError,    setScanError]    = useState(null);
   const [scanLoading,  setScanLoading]  = useState(false);
-  const [jsqrReady,    setJsqrReady]    = useState(false);
   const [deleteConfirm,setDeleteConfirm]= useState(null);
   const [searchQuery,  setSearchQuery]  = useState("");
   const [copiedId,     setCopiedId]     = useState(null);
   const [sendingId,    setSendingId]    = useState(null);
   const [sendMsg,      setSendMsg]      = useState(null);
 
-  const videoRef  = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef    = useRef(null);
+  const [scannerStarted, setScannerStarted] = useState(false);
+  const scannerRef = useRef(null);
 
-  // ── Chargement depuis Supabase ──
+  useEffect(() => { if (tab !== "scanner") stopScanner(); }, [tab]);
+
+  async function stopScanner() {
+    if (scannerRef.current) {
+      try { await scannerRef.current.stop(); scannerRef.current.clear(); } catch {}
+      scannerRef.current = null;
+    }
+    setScanActive(false);
+    setScannerStarted(false);
+  }
+
+  async function startScanner() {
+    setScanError(null); setScanResult(null); setScanLoading(true);
+    try {
+      if (!window.Html5Qrcode) {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+          s.onload = res; s.onerror = rej;
+          document.head.appendChild(s);
+        });
+      }
+      setScanActive(true); setScanLoading(false);
+      setTimeout(async () => {
+        try {
+          const scanner = new window.Html5Qrcode("qr-reader");
+          scannerRef.current = scanner;
+          await scanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (qrCode) => {
+              if (qrCode?.startsWith("MUNCHY-CLIENT-")) {
+                const id = parseInt(qrCode.replace("MUNCHY-CLIENT-", ""), 10);
+                const found = customers.find(c => c.id === id);
+                setScanResult(found ? { type:"found", customer:found } : { type:"unknown" });
+                setSelected(found || null);
+                stopScanner();
+              }
+            },
+            () => {}
+          );
+        } catch(e) {
+          setScanActive(false);
+          setScanError("Accès caméra refusé. Autorise la caméra dans les paramètres de ton navigateur.");
+        }
+      }, 300);
+    } catch {
+      setScanLoading(false);
+      setScanError("Impossible de charger le scanner. Vérifie ta connexion.");
+    }
+  }
   useEffect(() => {
     async function load() {
       try {
@@ -339,57 +386,6 @@ function MainApp() {
     }
     setSendingId(null);
     setTimeout(() => setSendMsg(null), 5000);
-  }
-
-  // ── Scanner ──
-  useEffect(() => {
-    if (window.jsQR) { setJsqrReady(true); return; }
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js";
-    s.onload = () => setJsqrReady(true);
-    document.head.appendChild(s);
-  }, []);
-
-  useEffect(() => { if (tab !== "scanner") stopScanner(); }, [tab]);
-
-  function stopScanner() {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    streamRef.current = null; setScanActive(false);
-  }
-
-  const scanFrame = useCallback(() => {
-    const video = videoRef.current, canvas = canvasRef.current;
-    if (!video || !canvas || !window.jsQR) return;
-    const ctx = canvas.getContext("2d");
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts:"dontInvert" });
-      if (code?.data?.startsWith("MUNCHY-CLIENT-")) {
-        const id = parseInt(code.data.replace("MUNCHY-CLIENT-",""), 10);
-        const found = customers.find(c => c.id === id);
-        setScanResult(found ? { type:"found", customer:found } : { type:"unknown" });
-        setSelected(found || null);
-        stopScanner(); return;
-      }
-    }
-    rafRef.current = requestAnimationFrame(scanFrame);
-  }, [customers]);
-
-  async function startScanner() {
-    setScanError(null); setScanResult(null); setScanLoading(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
-      streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      setScanActive(true); setScanLoading(false);
-      rafRef.current = requestAnimationFrame(scanFrame);
-    } catch {
-      setScanLoading(false);
-      setScanError("Accès caméra refusé. Autorise la caméra dans les paramètres.");
-    }
   }
 
   // ── Styles ──
@@ -625,24 +621,18 @@ function MainApp() {
             {!scanActive && !scanResult && (
               <div style={{ textAlign:"center", padding:"20px 0" }}>
                 <div style={{ fontSize:"58px", marginBottom:"14px" }}>📷</div>
-                <button style={{ ...S.btn(C.purple), fontSize:"15px", padding:"13px 32px" }} onClick={startScanner} disabled={!jsqrReady||scanLoading}>
-                  {scanLoading?"⏳ Démarrage...":!jsqrReady?"⏳ Chargement...":"📷 Démarrer le scanner"}
+                <button style={{ ...S.btn(C.purple), fontSize:"15px", padding:"13px 32px" }} onClick={startScanner} disabled={scanLoading}>
+                  {scanLoading ? "⏳ Démarrage..." : "📷 Démarrer le scanner"}
                 </button>
               </div>
             )}
             {scanError && <div style={S.msg("error")}>{scanError}</div>}
             {scanActive && <>
-              <div style={{ position:"relative", borderRadius:"14px", overflow:"hidden", background:"#000", maxWidth:"440px", margin:"0 auto" }}>
-                <video ref={videoRef} style={{ width:"100%", display:"block" }} playsInline muted />
-                <canvas ref={canvasRef} style={{ display:"none" }} />
-                <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
-                  <div style={{ width:"190px", height:"190px", border:"3px solid "+C.pink, borderRadius:"14px", boxShadow:"0 0 0 9999px rgba(0,0,0,0.5)" }} />
-                </div>
-                <div style={{ position:"absolute", bottom:"12px", left:0, right:0, textAlign:"center" }}>
-                  <div style={{ background:"rgba(0,0,0,.75)", color:C.text, fontSize:"11px", padding:"5px 14px", borderRadius:"20px", display:"inline-block" }}>🔍 Placez le QR dans le cadre</div>
-                </div>
+              <div id="qr-reader" style={{ width:"100%", borderRadius:"14px", overflow:"hidden" }}></div>
+              <div style={{ textAlign:"center", marginTop:"12px" }}>
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"8px" }}>📷 Placez le QR code dans le cadre</div>
+                <button style={S.btn(C.muted)} onClick={stopScanner}>✕ Arrêter</button>
               </div>
-              <div style={{ textAlign:"center", marginTop:"12px" }}><button style={S.btn(C.muted)} onClick={stopScanner}>✕ Annuler</button></div>
             </>}
             {scanResult && (() => {
               if (scanResult.type === "unknown") return <div style={S.msg("error")}>QR non reconnu.</div>;
