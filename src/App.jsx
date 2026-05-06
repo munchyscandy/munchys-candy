@@ -114,7 +114,7 @@ function MainApp() {
   const [purchaseMsg,  setPurchaseMsg]  = useState(null);
   const [useAmt,       setUseAmt]       = useState("");
   const [useMsg,       setUseMsg]       = useState(null);
-  const [newCust,      setNewCust]      = useState({ name:"", email:"", phone:"" });
+  const [newCust,      setNewCust]      = useState({ name:"", email:"", phone:"", birthday:"" });
   const [addMsg,       setAddMsg]       = useState(null);
   const [cartAmt,      setCartAmt]      = useState("");
   const [diceResult,   setDiceResult]   = useState(null);
@@ -159,6 +159,7 @@ function MainApp() {
       id: c.id, name: c.name, email: c.email, phone: c.phone||"",
       cagnotte: parseFloat(c.cagnotte||0), joinDate: c.join_date||today(),
       purchases: c.purchases||0, totalSpent: parseFloat(c.total_spent||0),
+      birthday: c.birthday||"",
     };
   }
 
@@ -177,6 +178,7 @@ function MainApp() {
         id, name: newCust.name.trim(), email: newCust.email.trim(),
         phone: newCust.phone.trim(), cagnotte: 0,
         join_date: today(), purchases: 0, total_spent: 0,
+        birthday: newCust.birthday || null,
       });
       const newC = Array.isArray(inserted) ? mapFromDb(inserted[0]) : { id, ...newCust, cagnotte:0, joinDate:today(), purchases:0, totalSpent:0 };
       setCustomers(prev => [...prev, newC]);
@@ -289,7 +291,7 @@ function MainApp() {
     const c = customer || selected; if (!c) return;
     const tier = getTier(c.cagnotte), first = c.name.split(" ")[0], code = genCode("CANDY");
     const tpls = {
-      welcome:  { subject:`Bienvenue chez Munchys Candy, ${first} ! 🍬`, body:`Bonjour ${first},\n\nMerci d'avoir rejoint notre programme de fidélité !\n\nChaque achat te rapporte 5% en cagnotte.\nTa cagnotte actuelle : ${fmt(c.cagnotte)}€\n\nCode de bienvenue : ${code}\n✅ -5% sur ta prochaine commande\n\nÀ très bientôt ! 🍭\n\nL'équipe Munchys Candy` },
+      welcome:  { subject:`Bienvenue chez Munchys Candy, ${first} ! 🍬`, body:`Bonjour ${first},\n\nBienvenue dans la famille Munchy's Candy ! 🎉\n\nTon compte fidélité est maintenant actif. À chaque achat, tu gagnes automatiquement 5% en cagnotte.\n\nTa cagnotte actuelle : ${fmt(c.cagnotte)}€\nTon niveau : ${tier.emoji} ${tier.name}\n\nTu trouveras ci-dessous ta carte de fidélité avec ton QR code unique. Montre-le en boutique pour être identifié instantanément !\n\nOn t'attend avec plein de douceurs 🍭🍫\n\nL'équipe Munchy's Candy` },
       promo:    { subject:`Un cadeau spécial pour toi, ${first} ! 🎁`, body:`Bonjour ${first},\n\nTu es client(e) ${tier.emoji} ${tier.name} !\n\nCode promo : ${code}\n✅ -${tier.discount}% sur tous les bonbons\n⏳ Valable 30 jours\n\nL'équipe Munchys Candy` },
       birthday: { subject:`Joyeux anniversaire de Munchys ! 🎂`, body:`Bonjour ${first},\n\nJoyeux anniversaire ! 🎉\n\nCode : ${code}\n🎁 -15% sur toute ta commande\n⏳ Valable jusqu'à fin du mois\n\nL'équipe Munchys Candy` },
       offre5:   { subject:`🍬 Offre spéciale -5% chez Munchys !`, body:`Bonjour ${first},\n\nCode promo : ${code}\n✅ -5% sur toute la boutique\n⏳ Cette semaine seulement !\n\nL'équipe Munchys Candy` },
@@ -493,6 +495,35 @@ function MainApp() {
               })}
             </div>
           </div>
+          <div style={{ ...S.sec, background:"#FFD60008", border:"1px solid #FFD60033" }}>
+            <div style={S.stitle}>🎂 Anniversaires ce mois-ci</div>
+            {(() => {
+              const thisMonth = new Date().getMonth();
+              const today2 = new Date().getDate();
+              const birthdays = customers.filter(c => {
+                if (!c.birthday) return false;
+                const d = new Date(c.birthday);
+                return d.getMonth() === thisMonth;
+              }).sort((a,b) => new Date(a.birthday).getDate() - new Date(b.birthday).getDate());
+              if (birthdays.length === 0) return <div style={{ color:C.muted, fontSize:"13px" }}>Aucun anniversaire ce mois-ci 🎈</div>;
+              return birthdays.map(c => {
+                const d = new Date(c.birthday);
+                const isToday = d.getDate() === today2;
+                const tier = getTier(c.cagnotte);
+                return (
+                  <div key={c.id} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"8px", borderRadius:"10px", background:isToday?"#FFD60022":"transparent", border:isToday?`1px solid ${C.yellow}`:"1px solid transparent", marginBottom:"6px" }}>
+                    <span style={{ fontSize:"20px" }}>{isToday?"🎂":"📅"}</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:"bold", fontSize:"13px" }}>{c.name} {isToday&&<span style={{ color:C.yellow }}>— AUJOURD'HUI ! 🎉</span>}</div>
+                      <div style={{ fontSize:"11px", color:C.muted }}>{d.toLocaleDateString("fr-BE",{day:"2-digit",month:"long"})} · {tier.emoji} {tier.name}</div>
+                    </div>
+                    <button style={{ ...S.btn(C.pink), fontSize:"11px", padding:"6px 12px" }} onClick={() => { setSelected(c); setTab("emails"); }}>📧 Email</button>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
           <div style={{ ...S.sec, background:"#00E67608", border:"1px solid #00E67633" }}>
             <div style={S.stitle}>☁️ Sauvegarde Cloud Active</div>
             <p style={{ fontSize:"13px", color:C.muted, lineHeight:"1.8", margin:0 }}>
@@ -510,6 +541,10 @@ function MainApp() {
               <input style={{ ...S.input, flex:1, minWidth:"140px" }} placeholder="Nom complet *" value={newCust.name} onChange={e => setNewCust(p => ({...p, name:e.target.value}))} />
               <input style={{ ...S.input, flex:1, minWidth:"160px" }} placeholder="Email *" value={newCust.email} onChange={e => setNewCust(p => ({...p, email:e.target.value}))} />
               <input style={{ ...S.input, flex:1, minWidth:"130px" }} placeholder="Téléphone" value={newCust.phone} onChange={e => setNewCust(p => ({...p, phone:e.target.value}))} />
+              <div style={{ flex:1, minWidth:"160px" }}>
+                <div style={{ fontSize:"10px", color:C.muted, marginBottom:"4px" }}>🎂 Date de naissance</div>
+                <input type="date" style={{ ...S.input }} value={newCust.birthday} onChange={e => setNewCust(p => ({...p, birthday:e.target.value}))} />
+              </div>
               <button style={S.btn(C.green)} onClick={addCustomer}>Ajouter</button>
             </div>
             {addMsg && <div style={S.msg(addMsg.type)}>{addMsg.text}</div>}
@@ -552,7 +587,7 @@ function MainApp() {
                     <div style={{ fontSize:"9px", color:tier.color, letterSpacing:"2px", textTransform:"uppercase" }}>Munchys Candy — Carte de Fidélité</div>
                     <div style={{ fontSize:"18px", fontWeight:"bold", marginTop:"6px" }}>{c.name}</div>
                     <div style={{ fontSize:"10px", color:C.muted }}>{c.email}{c.phone?" · "+c.phone:""}</div>
-                    <div style={{ fontSize:"10px", color:C.muted }}>Membre depuis {c.joinDate}</div>
+                    <div style={{ fontSize:"10px", color:C.muted }}>Membre depuis {c.joinDate}{c.birthday ? ` · 🎂 ${new Date(c.birthday).toLocaleDateString("fr-BE",{day:"2-digit",month:"long"})}` : ""}</div>
                     <div style={{ display:"flex", gap:"16px", marginTop:"12px", flexWrap:"wrap" }}>
                       {[["CAGNOTTE",fmt(c.cagnotte)+"€",tier.color],["ACHATS",c.purchases,C.text],["REMISE",`-${tier.discount}%`,C.green]].map(([l,v,col]) => (
                         <div key={l}><div style={{ fontSize:"8px", color:C.muted, letterSpacing:"1px" }}>{l}</div><div style={{ fontSize:"22px", fontWeight:"bold", color:col }}>{v}</div></div>
@@ -854,4 +889,3 @@ function MainApp() {
     </div>
   );
 }
-
