@@ -317,14 +317,14 @@ function MainApp() {
   }
 
   // ── Envoi email via Resend ──
-  async function sendEmail(to, subject, body, id) {
+  async function sendEmail(to, subject, body, id, extraData = {}) {
     setSendingId(id);
     setSendMsg(null);
     try {
       const r = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject, body }),
+        body: JSON.stringify({ to, subject, body, ...extraData }),
       });
       const data = await r.json();
       if (data.success) {
@@ -780,7 +780,13 @@ function MainApp() {
                     <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
                     <button style={{ ...S.btn(sendingId===selected?.id?C.muted:C.green), fontSize:"11px" }}
                       disabled={sendingId===selected?.id}
-                      onClick={() => sendEmail(selected.email, emailTpl.subject, emailTpl.body, selected.id)}>
+                      onClick={() => sendEmail(
+                        selected.email,
+                        emailTpl.subject,
+                        emailTpl.body,
+                        selected.id,
+                        { customerId: selected.id, customerName: selected.name, cagnotte: selected.cagnotte, tier: getTier(selected.cagnotte).emoji + ' ' + getTier(selected.cagnotte).name }
+                      )}>
                       {sendingId===selected?.id ? "⏳ Envoi..." : "📧 Envoyer à "+selected.name.split(" ")[0]}
                     </button>
                   </div>
@@ -848,3 +854,4 @@ function MainApp() {
     </div>
   );
 }
+
