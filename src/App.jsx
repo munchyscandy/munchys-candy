@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://swrpladhwaspibpoegwn.supabase.co";
 const SUPABASE_KEY = "sb_publishable_1m5yOZvVzFfXQQYqoN8h_A_nd56vaPI";
-
-// Simple Supabase client sans library
 const db = {
   async get(table, filters = {}) {
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*&order=created_at.desc`;
@@ -35,43 +32,37 @@ const db = {
     });
   },
 };
-
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const APP_PASSWORD  = "MUNCHY2026";
 const CASHBACK_RATE = 0.05;
 const DICE_FACES    = ["","⚀","⚁","⚂","⚃","⚄","⚅"];
-
 const C = {
   pink:"#FF3D7F", yellow:"#FFD600", blue:"#00C2FF", purple:"#9B51E0",
   green:"#00E676", bg:"#0D0D1A", card:"#16162A", cardLight:"#1E1E35",
   text:"#FFFFFF", muted:"#8888AA",
 };
-
 const TIERS = [
   { name:"Sucre",     min:0,   max:9.99,     color:"#C0C0C0", emoji:"🍬", discount:5  },
   { name:"Caramel",   min:10,  max:24.99,    color:"#FFD600", emoji:"🍭", discount:10 },
   { name:"Chocolat",  min:25,  max:49.99,    color:"#CD7F32", emoji:"🍫", discount:15 },
   { name:"Candy VIP", min:50,  max:Infinity, color:"#FF3D7F", emoji:"👑", discount:20 },
 ];
-
 const getTier  = c   => TIERS.find(t => c >= t.min && c <= t.max) || TIERS[0];
 const genCode  = pfx => (pfx||"MUNCHY") + "-" + Math.random().toString(36).substring(2,8).toUpperCase();
 const qrUrl    = (data,sz=160) => `https://api.qrserver.com/v1/create-qr-code/?size=${sz}x${sz}&data=${encodeURIComponent(data)}&format=png`;
 const clientQr = id  => `MUNCHY-CLIENT-${id}`;
 const today    = ()  => new Date().toISOString().split("T")[0];
 const fmt      = n   => Number(n||0).toFixed(2);
+// Clé localStorage pour tracker les emails envoyés ce mois
+const sentKey  = () => `munchy-sent-${new Date().getFullYear()}-${new Date().getMonth()+1}`;
 
-// ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onSuccess }) {
   const [pwd, setPwd]   = useState("");
   const [err, setErr]   = useState(false);
   const [shake, setShake] = useState(false);
-
   function login() {
     if (pwd === APP_PASSWORD) { sessionStorage.setItem("munchys-auth","1"); onSuccess(); }
     else { setErr(true); setShake(true); setPwd(""); setTimeout(()=>{ setErr(false); setShake(false); }, 2000); }
   }
-
   return (
     <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Georgia',serif" }}>
       <div style={{ textAlign:"center", padding:"32px 24px", maxWidth:"360px", width:"100%" }}>
@@ -96,7 +87,6 @@ function LoginScreen({ onSuccess }) {
   );
 }
 
-// ─── APP ──────────────────────────────────────────────────────────────────────
 export default function MunchysLoyalty() {
   const [auth, setAuth] = useState(() => sessionStorage.getItem("munchys-auth") === "1");
   if (!auth) return <LoginScreen onSuccess={() => setAuth(true)} />;
@@ -132,32 +122,35 @@ function MainApp() {
   const [copiedId,     setCopiedId]     = useState(null);
   const [sendingId,    setSendingId]    = useState(null);
   const [sendMsg,      setSendMsg]      = useState(null);
-
-  const [scannerStarted, setScannerStarted] = useState(false);
+  const [sending,      setSending]      = useState(false);
+  const [sendResult,   setSendResult]   = useState(null);
+  // Track des emails déjà envoyés ce mois (stocké en localStorage)
+  const [sentIds, setSentIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(sentKey()) || "[]"); } catch { return []; }
+  });
+  const [sendingAll,   setSendingAll]   = useState(false);
+  const [sendAllMsg,   setSendAllMsg]   = useState(null);
   const scannerRef = useRef(null);
 
-  useEffect(() => { 
-    return () => { stopScanner(); };
-  }, []);
+  function markSent(id) {
+    setSentIds(prev => {
+      const updated = prev.includes(id) ? prev : [...prev, id];
+      localStorage.setItem(sentKey(), JSON.stringify(updated));
+      return updated;
+    });
+  }
 
-  useEffect(() => { 
-    if (tab !== "scanner") stopScanner(); 
-  }, [tab]);
+  useEffect(() => { return () => { stopScanner(); }; }, []);
+  useEffect(() => { if (tab !== "scanner") stopScanner(); }, [tab]);
 
   async function stopScanner() {
     if (scannerRef.current) {
       try { await scannerRef.current.stop(); scannerRef.current.clear(); } catch {}
       scannerRef.current = null;
     }
-    setScanActive(false);
-    setScanLoading(false);
+    setScanActive(false); setScanLoading(false);
   }
-
-  function resetScanner() {
-    stopScanner();
-    setScanResult(null);
-    setScanError(null);
-  }
+  function resetScanner() { stopScanner(); setScanResult(null); setScanError(null); }
 
   async function startScanner() {
     setScanError(null); setScanResult(null); setScanLoading(true);
@@ -175,11 +168,8 @@ function MainApp() {
         try {
           const scanner = new window.Html5Qrcode("qr-reader");
           scannerRef.current = scanner;
-          await scanner.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 250, height: 250 } },
+          await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
             (qrCode) => {
-              console.log("QR scanné:", qrCode);
               if (qrCode && qrCode.includes("MUNCHY-CLIENT-")) {
                 const parts = qrCode.split("MUNCHY-CLIENT-");
                 const id = parseInt(parts[parts.length - 1], 10);
@@ -188,38 +178,29 @@ function MainApp() {
                 setSelected(found || null);
                 stopScanner();
               } else {
-                setScanResult({ type:"unknown", raw:qrCode });
-                stopScanner();
+                setScanResult({ type:"unknown", raw:qrCode }); stopScanner();
               }
-            },
-            () => {}
+            }, () => {}
           );
         } catch(e) {
-          console.error("Scanner error:", e);
-          setScanActive(false);
-          setScanLoading(false);
+          setScanActive(false); setScanLoading(false);
           setScanError("Accès caméra refusé. Autorise la caméra dans les paramètres Safari.");
         }
       }, 500);
-    } catch(e) {
-      setScanLoading(false);
-      setScanError("Impossible de charger le scanner.");
-    }
+    } catch(e) { setScanLoading(false); setScanError("Impossible de charger le scanner."); }
   }
+
   useEffect(() => {
     async function load() {
       try {
         const data = await db.get("customers");
         setCustomers(Array.isArray(data) ? data.map(mapFromDb) : []);
-      } catch {
-        setCustomers([]);
-      }
+      } catch { setCustomers([]); }
       setLoading(false);
     }
     load();
   }, []);
 
-  // Mapping DB → app
   function mapFromDb(c) {
     return {
       id: c.id, name: c.name, email: c.email, phone: c.phone||"",
@@ -231,12 +212,10 @@ function MainApp() {
 
   function logout() { sessionStorage.removeItem("munchys-auth"); window.location.reload(); }
 
-  // ── CRUD clients ──
   async function addCustomer() {
     if (!newCust.name || !newCust.email) return setAddMsg({ type:"error", text:"Nom et email obligatoires." });
     if (customers.some(c => c.email.toLowerCase() === newCust.email.toLowerCase()))
       return setAddMsg({ type:"error", text:"Cet email existe déjà." });
-
     setSaveStatus("saving");
     try {
       const id = Date.now();
@@ -248,13 +227,10 @@ function MainApp() {
       });
       const newC = Array.isArray(inserted) ? mapFromDb(inserted[0]) : { id, ...newCust, cagnotte:0, joinDate:today(), purchases:0, totalSpent:0 };
       setCustomers(prev => [...prev, newC]);
-      setNewCust({ name:"", email:"", phone:"" });
-      setAddMsg({ type:"success", text:"✅ Client ajouté et sauvegardé dans le cloud ! 🎉" });
+      setNewCust({ name:"", email:"", phone:"", birthday:"" });
+      setAddMsg({ type:"success", text:"✅ Client ajouté !" });
       setSaveStatus("saved");
-    } catch {
-      setAddMsg({ type:"error", text:"❌ Erreur de connexion. Réessaie." });
-      setSaveStatus("error");
-    }
+    } catch { setAddMsg({ type:"error", text:"❌ Erreur de connexion." }); setSaveStatus("error"); }
     setTimeout(() => setAddMsg(null), 4000);
   }
 
@@ -269,9 +245,7 @@ function MainApp() {
       setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...changes } : c));
       if (selected?.id === id) setSelected(prev => ({ ...prev, ...changes }));
       setSaveStatus("saved");
-    } catch {
-      setSaveStatus("error");
-    }
+    } catch { setSaveStatus("error"); }
   }
 
   async function deleteCustomer(id) {
@@ -285,7 +259,6 @@ function MainApp() {
     } catch { setSaveStatus("error"); }
   }
 
-  // ── Achat ──
   async function addPurchase() {
     const amount = parseFloat(purchaseAmt);
     if (!selected) return setPurchaseMsg({ type:"error", text:"Sélectionne un client." });
@@ -297,17 +270,16 @@ function MainApp() {
       totalSpent: parseFloat(((selected.totalSpent||0) + amount).toFixed(2)),
     };
     await updateCustomer(selected.id, updated);
-    setPurchaseMsg({ type:"success", text:`✅ +${fmt(earned)}€ en cagnotte pour ${fmt(amount)}€ d'achat !` });
+    setPurchaseMsg({ type:"success", text:`✅ +${fmt(earned)}€ en cagnotte !` });
     setPurchaseAmt("");
     setTimeout(() => setPurchaseMsg(null), 4000);
   }
 
-  // ── Utiliser cagnotte ──
   async function useCagnotte() {
     const amount = parseFloat(useAmt);
     if (!selected) return setUseMsg({ type:"error", text:"Sélectionne un client." });
     if (isNaN(amount) || amount <= 0) return setUseMsg({ type:"error", text:"Montant invalide." });
-    if (amount > selected.cagnotte) return setUseMsg({ type:"error", text:`Maximum disponible : ${fmt(selected.cagnotte)}€` });
+    if (amount > selected.cagnotte) return setUseMsg({ type:"error", text:`Maximum : ${fmt(selected.cagnotte)}€` });
     const updated = { cagnotte: parseFloat((selected.cagnotte - amount).toFixed(2)) };
     await updateCustomer(selected.id, updated);
     setUseMsg({ type:"success", text:`✅ ${fmt(amount)}€ utilisés ! Reste : ${fmt(updated.cagnotte)}€` });
@@ -315,7 +287,6 @@ function MainApp() {
     setTimeout(() => setUseMsg(null), 4000);
   }
 
-  // ── Dé ──
   function rollDice() {
     if (diceRolling) return;
     setDiceRolling(true); setDiceResult(null); setDiceWon(false);
@@ -326,39 +297,32 @@ function MainApp() {
     }, 80);
   }
 
-  // ── Emails ──
-  // ── Envoi email via Resend ──
-  const [sending,    setSending]    = useState(false);
-  const [sendResult, setSendResult] = useState(null);
-
-  async function sendEmail(to, subject, body) {
-    if (!to) return setSendResult({ type:"error", text:"Adresse email manquante !" });
-    setSending(true); setSendResult(null);
+  async function sendEmail(to, subject, body, id, extraData = {}) {
+    setSendingId(id); setSendMsg(null);
     try {
-      const r = await fetch("/api/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body }),
+      const r = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, body, ...extraData }),
       });
       const data = await r.json();
       if (data.success) {
-        setSendResult({ type:"success", text:`✅ Email envoyé à ${to} !` });
-        setTimeout(() => setSendResult(null), 5000);
+        setSendMsg({ type: 'success', text: `✅ Email envoyé à ${to} !` });
+        if (id) markSent(id);
       } else {
-        setSendResult({ type:"error", text:`❌ Erreur : ${data.error}` });
+        setSendMsg({ type: 'error', text: `❌ Erreur : ${data.error}` });
       }
-    } catch {
-      setSendResult({ type:"error", text:"❌ Erreur de connexion" });
-    }
-    setSending(false);
+    } catch { setSendMsg({ type: 'error', text: '❌ Erreur de connexion' }); }
+    setSendingId(null);
+    setTimeout(() => setSendMsg(null), 5000);
   }
 
   function generateEmail(type, customer) {
     const c = customer || selected; if (!c) return;
     const tier = getTier(c.cagnotte), first = c.name.split(" ")[0], code = genCode("CANDY");
     const tpls = {
-      welcome:  { subject:`Bienvenue chez Munchys Candy, ${first} ! 🍬`, body:`Bonjour ${first},\n\nBienvenue dans la famille Munchy's Candy ! 🎉\n\nTon compte fidélité est maintenant actif. À chaque achat, tu gagnes automatiquement 5% en cagnotte.\n\nTa cagnotte actuelle : ${fmt(c.cagnotte)}€\nTon niveau : ${tier.emoji} ${tier.name}\n\nTu trouveras ci-dessous ta carte de fidélité avec ton QR code unique. Montre-le en boutique pour être identifié instantanément !\n\nOn t'attend avec plein de douceurs 🍭🍫\n\nL'équipe Munchy's Candy` },
-      promo:    { subject:`Un cadeau spécial pour toi, ${first} ! 🎁`, body:`Bonjour ${first},\n\nTu es client(e) ${tier.emoji} ${tier.name} !\n\nCode promo : ${code}\n✅ -${tier.discount}% sur tous les bonbons\n⏳ Valable 30 jours\n\nL'équipe Munchys Candy` },
+      welcome:  { subject:`Bienvenue chez Munchys Candy, ${first} ! 🍬`, body:`Bonjour ${first},\n\nBienvenue dans la famille Munchy's Candy ! 🎉\n\nTon compte fidélité est maintenant actif. À chaque achat, tu gagnes automatiquement 5% en cagnotte.\n\nTa cagnotte actuelle : ${fmt(c.cagnotte)}€\nTon niveau : ${tier.emoji} ${tier.name}\n\nOn t'attend avec plein de douceurs 🍭🍫\n\nL'équipe Munchy's Candy` },
+      promo:    { subject:`Un cadeau spécial pour toi, ${first} ! 🎁`, body:`Bonjour ${first},\n\nCode promo : ${code}\n✅ -${tier.discount}% sur tous les bonbons\n⏳ Valable 30 jours\n\nL'équipe Munchys Candy` },
       birthday: { subject:`Joyeux anniversaire de Munchys ! 🎂`, body:`Bonjour ${first},\n\nJoyeux anniversaire ! 🎉\n\nCode : ${code}\n🎁 -15% sur toute ta commande\n⏳ Valable jusqu'à fin du mois\n\nL'équipe Munchys Candy` },
       offre5:   { subject:`🍬 Offre spéciale -5% chez Munchys !`, body:`Bonjour ${first},\n\nCode promo : ${code}\n✅ -5% sur toute la boutique\n⏳ Cette semaine seulement !\n\nL'équipe Munchys Candy` },
       offre10:  { subject:`🍭 -10% chez Munchys Candy !`, body:`Bonjour ${first},\n\nCode promo : ${code}\n✅ -10% sur toute la boutique\n⏳ Valable jusqu'à dimanche !\n\nL'équipe Munchys Candy` },
@@ -378,36 +342,62 @@ function MainApp() {
     setGroupTpl({ ...tpls[type], type });
   }
 
+  // Envoyer à tous les anniversaires du mois en une fois
+  async function sendBirthdayEmailsAll(birthdayClients) {
+    setSendingAll(true); setSendAllMsg(null);
+    let sent = 0, errors = 0;
+    for (const c of birthdayClients) {
+      if (sentIds.includes(c.id)) continue; // déjà envoyé
+      const code = genCode("BIRTHDAY");
+      const first = c.name.split(" ")[0];
+      const subject = `🎂 Joyeux anniversaire ${first} ! Un cadeau t'attend chez Munchy's`;
+      const body = `Bonjour ${first},\n\nToute l'équipe Munchy's Candy te souhaite un joyeux anniversaire ! 🎉🎂\n\nCode anniversaire : ${code}\n🎁 -15% sur toute ta commande\n⏳ Valable jusqu'à la fin du mois\n\nTa cagnotte actuelle : ${fmt(c.cagnotte)}€ · Niveau ${getTier(c.cagnotte).emoji} ${getTier(c.cagnotte).name}\n\nOn t'attend avec plein de douceurs !\n\nL'équipe Munchy's Candy`;
+      try {
+        const r = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: c.email, subject, body }),
+        });
+        const data = await r.json();
+        if (data.success) { sent++; markSent(c.id); }
+        else errors++;
+      } catch { errors++; }
+    }
+    setSendingAll(false);
+    setSendAllMsg({ type: errors === 0 ? "success" : "error", text: `✅ ${sent} email(s) envoyé(s)${errors > 0 ? ` · ❌ ${errors} erreur(s)` : ""}` });
+    setTimeout(() => setSendAllMsg(null), 6000);
+  }
+
+  // Envoyer email groupé à tous en une fois
+  async function sendGroupEmailAll() {
+    if (!groupTpl || groupTpl === "pending") return;
+    setSendingAll(true); setSendAllMsg(null);
+    let sent = 0, errors = 0;
+    for (const c of customers) {
+      if (!c.email) continue;
+      const tier = getTier(c.cagnotte);
+      const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : groupTpl.body;
+      try {
+        const r = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: c.email, subject: groupTpl.subject, body }),
+        });
+        const data = await r.json();
+        if (data.success) { sent++; markSent(c.id); } else errors++;
+      } catch { errors++; }
+    }
+    setSendingAll(false);
+    setSendAllMsg({ type: errors === 0 ? "success" : "error", text: `✅ ${sent} email(s) envoyé(s) sur ${customers.length} clients${errors > 0 ? ` · ❌ ${errors} erreur(s)` : ""}` });
+    setTimeout(() => setSendAllMsg(null), 6000);
+  }
+
   function copyEmail(text, id) {
     navigator.clipboard?.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
-  // ── Envoi email via Resend ──
-  async function sendEmail(to, subject, body, id, extraData = {}) {
-    setSendingId(id);
-    setSendMsg(null);
-    try {
-      const r = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject, body, ...extraData }),
-      });
-      const data = await r.json();
-      if (data.success) {
-        setSendMsg({ type: 'success', text: `✅ Email envoyé à ${to} !` });
-      } else {
-        setSendMsg({ type: 'error', text: `❌ Erreur : ${data.error}` });
-      }
-    } catch {
-      setSendMsg({ type: 'error', text: '❌ Erreur de connexion' });
-    }
-    setSendingId(null);
-    setTimeout(() => setSendMsg(null), 5000);
-  }
-
-  // ── Styles ──
   const S = {
     app:    { background:C.bg, minHeight:"100vh", fontFamily:"'Georgia',serif", color:C.text, paddingBottom:"50px" },
     header: { background:"linear-gradient(135deg,#FF3D7F,#9B51E0 50%,#00C2FF)", padding:"20px 24px", display:"flex", alignItems:"center", gap:"14px" },
@@ -427,7 +417,6 @@ function MainApp() {
 
   const totalCagnotte = customers.reduce((a,c) => a+c.cagnotte, 0);
   const topClient     = [...customers].sort((a,b) => b.cagnotte-a.cagnotte)[0];
-
   const filteredCustomers = customers.filter(c => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
@@ -445,19 +434,15 @@ function MainApp() {
     </div>
   );
 
-  // ── Écran chargement ──
   if (loading) return (
     <div style={{ ...S.app, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"20px" }}>
       <div style={{ fontSize:"50px" }}>🍬</div>
       <div style={{ fontSize:"18px", fontWeight:"bold" }}>Chargement...</div>
-      <div style={{ fontSize:"13px", color:C.muted }}>Connexion à la base de données cloud ☁️</div>
     </div>
   );
 
   return (
     <div style={S.app}>
-
-      {/* Header */}
       <div style={S.header}>
         <div style={{ fontSize:"34px" }}>🍬</div>
         <div style={{ flex:1 }}>
@@ -475,7 +460,6 @@ function MainApp() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={S.tabs}>
         {[["dashboard","📊 Dashboard"],["clients","👥 Clients"],["scanner","📷 Scanner QR"],["achat","💰 Achat"],["de","🎲 Dé"],["emails","📧 Emails"]].map(([id,lbl]) => (
           <button key={id} style={S.tab(tab===id)} onClick={() => setTab(id)}>{lbl}</button>
@@ -483,7 +467,6 @@ function MainApp() {
       </div>
 
       <div style={S.body}>
-
         {/* DASHBOARD */}
         {tab==="dashboard" && <>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:"12px", marginBottom:"18px" }}>
@@ -495,6 +478,7 @@ function MainApp() {
               </div>
             ))}
           </div>
+
           <div style={S.sec}>
             <div style={S.stitle}>🏆 Niveaux de Fidélité</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:"8px" }}>
@@ -510,6 +494,8 @@ function MainApp() {
               })}
             </div>
           </div>
+
+          {/* ANNIVERSAIRES */}
           <div style={{ ...S.sec, background:"#FFD60008", border:"1px solid #FFD60033" }}>
             <div style={S.stitle}>🎂 Anniversaires ce mois-ci</div>
             {(() => {
@@ -520,31 +506,61 @@ function MainApp() {
                 const d = new Date(c.birthday);
                 return d.getMonth() === thisMonth;
               }).sort((a,b) => new Date(a.birthday).getDate() - new Date(b.birthday).getDate());
-              if (birthdays.length === 0) return <div style={{ color:C.muted, fontSize:"13px" }}>Aucun anniversaire ce mois-ci 🎈</div>;
-              return birthdays.map(c => {
-                const d = new Date(c.birthday);
-                const isToday = d.getDate() === today2;
-                const tier = getTier(c.cagnotte);
-                return (
-                  <div key={c.id} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"8px", borderRadius:"10px", background:isToday?"#FFD60022":"transparent", border:isToday?`1px solid ${C.yellow}`:"1px solid transparent", marginBottom:"6px" }}>
-                    <span style={{ fontSize:"20px" }}>{isToday?"🎂":"📅"}</span>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontWeight:"bold", fontSize:"13px" }}>{c.name} {isToday&&<span style={{ color:C.yellow }}>— AUJOURD'HUI ! 🎉</span>}</div>
-                      <div style={{ fontSize:"11px", color:C.muted }}>{d.toLocaleDateString("fr-BE",{day:"2-digit",month:"long"})} · {tier.emoji} {tier.name}</div>
-                    </div>
-                    <button style={{ ...S.btn(C.pink), fontSize:"11px", padding:"6px 12px" }} onClick={() => { setSelected(c); setTab("emails"); }}>📧 Email</button>
-                  </div>
-                );
-              });
-            })()}
-          </div>
 
-          <div style={{ ...S.sec, background:"#00E67608", border:"1px solid #00E67633" }}>
-            <div style={S.stitle}>☁️ Sauvegarde Cloud Active</div>
-            <p style={{ fontSize:"13px", color:C.muted, lineHeight:"1.8", margin:0 }}>
-              Toutes tes données sont sauvegardées en temps réel sur <strong style={{ color:C.green }}>Supabase</strong> — un serveur sécurisé en Europe. 🇪🇺<br/>
-              Accessible depuis <strong style={{ color:C.text }}>n'importe quel appareil</strong> — tablette, téléphone, ordi. Jamais perdues. ✅
-            </p>
+              if (birthdays.length === 0) return <div style={{ color:C.muted, fontSize:"13px" }}>Aucun anniversaire ce mois-ci 🎈</div>;
+
+              const notSentYet = birthdays.filter(c => !sentIds.includes(c.id));
+
+              return <>
+                {/* Bouton Envoyer à tous */}
+                {notSentYet.length > 0 && (
+                  <button
+                    style={{ ...S.btn(sendingAll ? C.muted : C.pink), marginBottom:"14px", width:"100%", fontSize:"13px", padding:"12px" }}
+                    disabled={sendingAll}
+                    onClick={() => sendBirthdayEmailsAll(birthdays)}>
+                    {sendingAll ? "⏳ Envoi en cours..." : `📧 Envoyer à tous (${notSentYet.length} non envoyés)`}
+                  </button>
+                )}
+                {sendAllMsg && <div style={S.msg(sendAllMsg.type)}>{sendAllMsg.text}</div>}
+
+                {birthdays.map(c => {
+                  const d = new Date(c.birthday);
+                  const isToday = d.getDate() === today2;
+                  const tier = getTier(c.cagnotte);
+                  const alreadySent = sentIds.includes(c.id);
+                  return (
+                    <div key={c.id} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"8px", borderRadius:"10px", background:isToday?"#FFD60022":"transparent", border:isToday?`1px solid ${C.yellow}`:"1px solid transparent", marginBottom:"6px" }}>
+                      <span style={{ fontSize:"20px" }}>{isToday?"🎂":"📅"}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:"bold", fontSize:"13px", display:"flex", alignItems:"center", gap:"6px" }}>
+                          {c.name}
+                          {isToday && <span style={{ color:C.yellow }}>— AUJOURD'HUI ! 🎉</span>}
+                          {/* Point vert si déjà envoyé */}
+                          {alreadySent && <span style={{ display:"inline-block", width:"8px", height:"8px", borderRadius:"50%", background:C.green, marginLeft:"4px" }} title="Email déjà envoyé ce mois-ci" />}
+                        </div>
+                        <div style={{ fontSize:"11px", color:C.muted }}>{d.toLocaleDateString("fr-BE",{day:"2-digit",month:"long"})} · {tier.emoji} {tier.name}</div>
+                      </div>
+                      <button
+                        style={{ ...S.btn(alreadySent ? "#2a5c3a" : C.pink), fontSize:"11px", padding:"6px 12px", opacity: sendingId===c.id ? 0.6 : 1 }}
+                        disabled={sendingId===c.id}
+                        onClick={async () => {
+                          const code = genCode("BIRTHDAY");
+                          const first = c.name.split(" ")[0];
+                          await sendEmail(
+                            c.email,
+                            `🎂 Joyeux anniversaire ${first} ! Un cadeau t'attend chez Munchy's`,
+                            `Bonjour ${first},\n\nJoyeux anniversaire ! 🎉\n\nCode : ${code}\n🎁 -15% sur toute ta commande\n⏳ Valable jusqu'à fin du mois\n\nL'équipe Munchys Candy`,
+                            c.id
+                          );
+                        }}>
+                        {sendingId===c.id ? "⏳" : alreadySent ? "✅ Renvoyé ?" : "📧 Envoyer"}
+                      </button>
+                    </div>
+                  );
+                })}
+                {sendMsg && <div style={S.msg(sendMsg.type)}>{sendMsg.text}</div>}
+              </>;
+            })()}
           </div>
         </>}
 
@@ -564,14 +580,11 @@ function MainApp() {
             </div>
             {addMsg && <div style={S.msg(addMsg.type)}>{addMsg.text}</div>}
           </div>
-
           <div style={{ ...S.sec, padding:"12px 18px" }}>
             <input style={S.input} placeholder="🔍 Rechercher par nom, email ou téléphone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             {searchQuery && <div style={{ fontSize:"12px", color:C.muted, marginTop:"6px" }}>{filteredCustomers.length} résultat(s)</div>}
           </div>
-
           {filteredCustomers.length === 0 && <div style={{ textAlign:"center", color:C.muted, padding:"40px" }}>Aucun client trouvé 🔍</div>}
-
           {filteredCustomers.map(c => {
             const tier = getTier(c.cagnotte), next = TIERS[TIERS.indexOf(tier)+1];
             const pct = next ? ((c.cagnotte-tier.min)/(next.min-tier.min))*100 : 100;
@@ -595,7 +608,6 @@ function MainApp() {
                 </div>
                 <div style={{ fontSize:"11px", color:C.muted }}>{open?"▲":"▼"}</div>
               </div>
-
               {open && <div style={S.card(tier.color)}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:"14px", flexWrap:"wrap" }}>
                   <div style={{ flex:1 }}>
@@ -656,7 +668,7 @@ function MainApp() {
             {scanResult && (() => {
               if (scanResult.type === "unknown") return (
                 <div>
-                  <div style={S.msg("error")}>❌ QR non reconnu — ce n'est pas une carte Munchy's</div>
+                  <div style={S.msg("error")}>❌ QR non reconnu</div>
                   <button style={{ ...S.btn(C.purple), marginTop:"10px", width:"100%" }} onClick={resetScanner}>📷 Réessayer</button>
                 </div>
               );
@@ -667,12 +679,7 @@ function MainApp() {
                   <div style={{ display:"flex", alignItems:"center", gap:"12px", marginBottom:"10px" }}>
                     <div style={{ fontSize:"38px" }}>{tier.emoji}</div>
                     <div style={{ flex:1 }}><div style={{ fontSize:"10px", color:C.green, letterSpacing:"1px" }}>✅ CLIENT IDENTIFIÉ</div><div style={{ fontSize:"18px", fontWeight:"bold" }}>{c.name}</div><div style={{ fontSize:"11px", color:C.muted }}>{c.email}</div></div>
-                    <div style={{ textAlign:"right" }}><div style={{ fontSize:"24px", fontWeight:"bold", color:tier.color }}>{fmt(c.cagnotte)}€</div><div style={{ fontSize:"10px", color:C.muted }}>cagnotte</div></div>
-                  </div>
-                  <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
-                    <span style={S.badge(tier.color)}>{tier.emoji} {tier.name}</span>
-                    <span style={S.badge(C.blue)}>-{tier.discount}%</span>
-                    <span style={S.badge(C.muted)}>{c.purchases} achats</span>
+                    <div style={{ textAlign:"right" }}><div style={{ fontSize:"24px", fontWeight:"bold", color:tier.color }}>{fmt(c.cagnotte)}€</div></div>
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
@@ -683,28 +690,17 @@ function MainApp() {
               </div>;
             })()}
           </div>
-
           <div style={S.sec}>
-            <div style={S.stitle}>🔍 Recherche manuelle (sans QR)</div>
+            <div style={S.stitle}>🔍 Recherche manuelle</div>
             <input style={S.input} placeholder="Nom, email ou téléphone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             {searchQuery && filteredCustomers.map(c => {
               const tier = getTier(c.cagnotte);
               return <div key={c.id} style={{ ...S.row(selected?.id===c.id), marginTop:"8px" }} onClick={() => { setSelected(c); setSearchQuery(""); }}>
                 <div style={{ fontSize:"24px" }}>{tier.emoji}</div>
-                <div style={{ flex:1 }}><div style={{ fontWeight:"bold", fontSize:"13px" }}>{c.name}</div><div style={{ fontSize:"11px", color:C.muted }}>{c.email}{c.phone?" · "+c.phone:""}</div></div>
-                <div style={{ textAlign:"right" }}><div style={{ fontWeight:"bold", color:tier.color }}>{fmt(c.cagnotte)}€</div><span style={S.badge(tier.color)}>{tier.name}</span></div>
+                <div style={{ flex:1 }}><div style={{ fontWeight:"bold", fontSize:"13px" }}>{c.name}</div><div style={{ fontSize:"11px", color:C.muted }}>{c.email}</div></div>
+                <div style={{ textAlign:"right" }}><div style={{ fontWeight:"bold", color:tier.color }}>{fmt(c.cagnotte)}€</div></div>
               </div>;
             })}
-            {selected && !searchQuery && (
-              <div style={{ background:"#00E67622", border:`1px solid ${C.green}44`, borderRadius:"12px", padding:"12px", marginTop:"10px", display:"flex", alignItems:"center", gap:"10px" }}>
-                <span style={{ fontSize:"24px" }}>{getTier(selected.cagnotte).emoji}</span>
-                <div style={{ flex:1 }}><div style={{ fontWeight:"bold" }}>{selected.name}</div><div style={{ fontSize:"11px", color:C.muted }}>{selected.email}</div></div>
-                <div style={{ display:"flex", gap:"8px" }}>
-                  <button style={{ ...S.btn(C.green), fontSize:"11px", padding:"7px 12px" }} onClick={() => setTab("achat")}>💰 Achat</button>
-                  <button style={{ ...S.btn(C.muted), fontSize:"11px", padding:"7px 12px" }} onClick={() => setSelected(null)}>✕</button>
-                </div>
-              </div>
-            )}
           </div>
         </>}
 
@@ -712,62 +708,29 @@ function MainApp() {
         {tab==="achat" && <>
           <div style={S.sec}>
             <div style={S.stitle}>👤 Sélectionner un client</div>
-            <p style={{ color:C.muted, fontSize:"12px", marginTop:0 }}>Ou utilise <button style={{ background:"none", border:"none", color:C.purple, cursor:"pointer", fontWeight:"bold", fontSize:"12px", padding:0 }} onClick={() => setTab("scanner")}>📷 le scanner QR</button></p>
             <CustomerPicker onPick={setSelected} current={selected} />
           </div>
-
           {selected && <>
             <div style={S.sec}>
               <div style={S.stitle}>💰 Enregistrer un achat — {selected.name}</div>
               <div style={{ background:C.cardLight, borderRadius:"10px", padding:"10px 14px", marginBottom:"12px", fontSize:"12px" }}>
-                💡 Le client gagne <strong style={{ color:C.green }}>5%</strong> du montant · Cagnotte actuelle : <strong style={{ color:getTier(selected.cagnotte).color }}>{fmt(selected.cagnotte)}€</strong>
+                💡 Le client gagne <strong style={{ color:C.green }}>5%</strong> · Cagnotte actuelle : <strong style={{ color:getTier(selected.cagnotte).color }}>{fmt(selected.cagnotte)}€</strong>
               </div>
               <div style={{ display:"flex", gap:"10px" }}>
                 <input style={{ ...S.input, flex:1 }} type="number" placeholder="Montant de l'achat (€)" value={purchaseAmt} onChange={e => setPurchaseAmt(e.target.value)} />
                 <button style={S.btn(C.green)} onClick={addPurchase}>Valider</button>
               </div>
-              {purchaseAmt && parseFloat(purchaseAmt) >= 1 && (
-                <div style={{ fontSize:"12px", color:C.yellow, marginTop:"8px" }}>✨ +<strong style={{ color:C.green }}>{fmt(parseFloat(purchaseAmt)*0.05)}€</strong> en cagnotte</div>
-              )}
               {purchaseMsg && <div style={S.msg(purchaseMsg.type)}>{purchaseMsg.text}</div>}
             </div>
-
             <div style={{ ...S.sec, background:"#9B51E008", border:"1px solid #9B51E033" }}>
               <div style={S.stitle}>🎁 Utiliser la Cagnotte — {selected.name}</div>
-              <div style={{ background:C.cardLight, borderRadius:"10px", padding:"10px 14px", marginBottom:"12px", fontSize:"13px", display:"flex", alignItems:"center", gap:"10px" }}>
-                <span style={{ fontSize:"24px" }}>{getTier(selected.cagnotte).emoji}</span>
-                <div><div style={{ color:C.muted, fontSize:"11px" }}>Cagnotte disponible</div><div style={{ fontSize:"22px", fontWeight:"bold", color:getTier(selected.cagnotte).color }}>{fmt(selected.cagnotte)}€</div></div>
-              </div>
               <div style={{ display:"flex", gap:"10px" }}>
                 <input style={{ ...S.input, flex:1 }} type="number" placeholder={`Max ${fmt(selected.cagnotte)}€`} value={useAmt} onChange={e => setUseAmt(e.target.value)} />
                 <button style={S.btn(C.purple)} onClick={useCagnotte}>Utiliser</button>
               </div>
-              {useAmt && parseFloat(useAmt) > 0 && parseFloat(useAmt) <= selected.cagnotte && (
-                <div style={{ fontSize:"12px", color:C.yellow, marginTop:"8px" }}>💡 Reste après : <strong style={{ color:C.green }}>{fmt(selected.cagnotte - parseFloat(useAmt))}€</strong></div>
-              )}
               {useMsg && <div style={S.msg(useMsg.type)}>{useMsg.text}</div>}
-              <div style={{ display:"flex", gap:"8px", marginTop:"10px", flexWrap:"wrap" }}>
-                <div style={{ fontSize:"11px", color:C.muted, width:"100%" }}>Montants rapides :</div>
-                {[1,2,5,10].filter(a => selected.cagnotte >= a).map(a => (
-                  <button key={a} style={{ ...S.btn(C.cardLight), fontSize:"11px", padding:"6px 12px", border:"1px solid #ffffff20" }} onClick={() => setUseAmt(String(a))}>{a}€</button>
-                ))}
-                {selected.cagnotte > 0 && <button style={{ ...S.btn(C.cardLight), fontSize:"11px", padding:"6px 12px", border:"1px solid #ffffff20" }} onClick={() => setUseAmt(fmt(selected.cagnotte))}>Tout ({fmt(selected.cagnotte)}€)</button>}
-              </div>
             </div>
           </>}
-
-          <div style={S.sec}>
-            <div style={S.stitle}>📊 Simulateur — 5% en Cagnotte</div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(85px,1fr))", gap:"8px" }}>
-              {[1,5,10,20,50,100].map(a => (
-                <div key={a} style={{ background:C.cardLight, borderRadius:"10px", padding:"10px", textAlign:"center" }}>
-                  <div style={{ fontSize:"15px", fontWeight:"bold", color:C.yellow }}>{a}€</div>
-                  <div style={{ fontSize:"10px", color:C.muted }}>→ 5%</div>
-                  <div style={{ fontSize:"14px", fontWeight:"bold", color:C.green }}>{fmt(a*0.05)}€</div>
-                </div>
-              ))}
-            </div>
-          </div>
         </>}
 
         {/* DÉ */}
@@ -777,7 +740,7 @@ function MainApp() {
           <div style={{ display:"flex", justifyContent:"center", marginBottom:"14px" }}>
             <input style={{ ...S.input, width:"200px" }} placeholder="Montant du panier (€)" value={cartAmt} onChange={e => setCartAmt(e.target.value)} />
           </div>
-          <div style={{ fontSize:"88px", cursor:"pointer", userSelect:"none", filter:diceRolling?"blur(1px)":"none" }} onClick={rollDice}>
+          <div style={{ fontSize:"88px", cursor:"pointer", userSelect:"none" }} onClick={rollDice}>
             {diceResult ? DICE_FACES[diceResult] : "🎲"}
           </div>
           <button style={{ ...S.btn(diceRolling?C.muted:C.purple), fontSize:"15px", padding:"12px 28px", margin:"10px 0" }} onClick={rollDice} disabled={diceRolling}>
@@ -792,7 +755,7 @@ function MainApp() {
             : <div style={{ background:"#FF3D7F11", border:"1px solid #FF3D7F44", borderRadius:"14px", padding:"16px" }}>
                 <div style={{ fontSize:"32px" }}>{DICE_FACES[diceResult]}</div>
                 <div style={{ fontSize:"15px", color:C.pink, fontWeight:"bold" }}>Résultat : {diceResult}</div>
-                <div style={{ fontSize:"11px", color:C.muted, marginTop:"5px" }}>Pas de 6 cette fois… à la prochaine ! 🍬</div>
+                <div style={{ fontSize:"11px", color:C.muted, marginTop:"5px" }}>Pas de 6 cette fois… 🍬</div>
               </div>
           )}
         </div>}
@@ -829,13 +792,7 @@ function MainApp() {
                     <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
                     <button style={{ ...S.btn(sendingId===selected?.id?C.muted:C.green), fontSize:"11px" }}
                       disabled={sendingId===selected?.id}
-                      onClick={() => sendEmail(
-                        selected.email,
-                        emailTpl.subject,
-                        emailTpl.body,
-                        selected.id,
-                        { customerId: selected.id, customerName: selected.name, cagnotte: selected.cagnotte, tier: getTier(selected.cagnotte).emoji + ' ' + getTier(selected.cagnotte).name }
-                      )}>
+                      onClick={() => sendEmail(selected.email, emailTpl.subject, emailTpl.body, selected.id, { customerId: selected.id })}>
                       {sendingId===selected?.id ? "⏳ Envoi..." : "📧 Envoyer à "+selected.name.split(" ")[0]}
                     </button>
                   </div>
@@ -846,13 +803,11 @@ function MainApp() {
                 <div style={S.stitle}>🎟 Code Promo</div>
                 <button style={S.btn(C.yellow)} onClick={() => { const tier=getTier(selected.cagnotte); setPromoCode({ code:genCode(), discount:tier.discount, tier:tier.name }); }}>✨ Générer</button>
                 {promoCode && <div style={{ marginTop:"12px", background:C.yellow+"15", border:`2px dashed ${C.yellow}`, borderRadius:"12px", padding:"16px", textAlign:"center" }}>
-                  <div style={{ fontSize:"10px", color:C.muted, letterSpacing:"2px" }}>CODE PROMO</div>
-                  <div style={{ fontSize:"24px", fontWeight:"bold", color:C.yellow, letterSpacing:"4px", margin:"6px 0" }}>{promoCode.code}</div>
+                  <div style={{ fontSize:"24px", fontWeight:"bold", color:C.yellow, letterSpacing:"4px" }}>{promoCode.code}</div>
                   <div style={{ color:C.green, fontWeight:"bold", fontSize:"13px" }}>-{promoCode.discount}% · {promoCode.tier}</div>
                 </div>}
               </div>
             </>}
-            {!selected && <div style={{ textAlign:"center", color:C.muted, padding:"36px" }}>Sélectionne un client pour continuer</div>}
           </>}
 
           {groupTpl && <>
@@ -868,26 +823,41 @@ function MainApp() {
 
             {groupTpl && groupTpl !== "pending" && (
               <div style={S.sec}>
-                <div style={S.stitle}>📬 Emails à envoyer — {customers.length} clients</div>
-                <div style={{ fontSize:"12px", color:C.muted, marginBottom:"12px" }}>Copie chaque email et envoie depuis ta boîte mail.</div>
+                <div style={S.stitle}>📬 {customers.length} clients</div>
+                {/* Bouton Envoyer à tous */}
+                <button
+                  style={{ ...S.btn(sendingAll ? C.muted : C.green), marginBottom:"14px", width:"100%", padding:"12px", fontSize:"13px" }}
+                  disabled={sendingAll}
+                  onClick={sendGroupEmailAll}>
+                  {sendingAll ? "⏳ Envoi en cours..." : `📧 Envoyer à tous (${customers.length} clients)`}
+                </button>
+                {sendAllMsg && <div style={S.msg(sendAllMsg.type)}>{sendAllMsg.text}</div>}
+
                 {customers.map(c => {
                   const tier = getTier(c.cagnotte);
                   const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : groupTpl.body;
                   const full = `Objet: ${groupTpl.subject}\n\n${body}`;
-                  return <div key={c.id} style={{ background:C.cardLight, borderRadius:"12px", padding:"12px", marginBottom:"8px", border:"1px solid #ffffff10" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"6px" }}>
+                  const alreadySent = sentIds.includes(c.id);
+                  return <div key={c.id} style={{ background:C.cardLight, borderRadius:"12px", padding:"12px", marginBottom:"8px", border:`1px solid ${alreadySent?"#00E67633":"#ffffff10"}` }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                       <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
                         <span style={{ fontSize:"18px" }}>{tier.emoji}</span>
-                        <div><div style={{ fontWeight:"bold", fontSize:"12px" }}>{c.name}</div><div style={{ fontSize:"10px", color:C.muted }}>{c.email}</div></div>
+                        <div>
+                          <div style={{ fontWeight:"bold", fontSize:"12px", display:"flex", alignItems:"center", gap:"6px" }}>
+                            {c.name}
+                            {alreadySent && <span style={{ display:"inline-block", width:"8px", height:"8px", borderRadius:"50%", background:C.green }} title="Déjà envoyé" />}
+                          </div>
+                          <div style={{ fontSize:"10px", color:C.muted }}>{c.email}</div>
+                        </div>
                       </div>
                       <div style={{ display:"flex", gap:"6px" }}>
                         <button style={{ ...S.btn(copiedId===c.id?C.green:C.cardLight), fontSize:"10px", padding:"5px 10px", border:`1px solid #ffffff20` }} onClick={() => copyEmail(full, c.id)}>
                           {copiedId===c.id?"✅":"📋"}
                         </button>
-                        <button style={{ ...S.btn(sendingId===c.id?C.muted:C.green), fontSize:"10px", padding:"5px 10px" }}
+                        <button style={{ ...S.btn(sendingId===c.id?C.muted:alreadySent?"#2a5c3a":C.green), fontSize:"10px", padding:"5px 10px" }}
                           disabled={sendingId===c.id}
                           onClick={() => sendEmail(c.email, groupTpl.subject, body, c.id)}>
-                          {sendingId===c.id?"⏳":"📧 Envoyer"}
+                          {sendingId===c.id?"⏳":alreadySent?"✅ Renvoyé ?":"📧 Envoyer"}
                         </button>
                       </div>
                     </div>
@@ -898,7 +868,6 @@ function MainApp() {
             )}
           </>}
         </>}
-
       </div>
     </div>
   );
