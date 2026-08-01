@@ -785,20 +785,36 @@ function MainApp() {
                     <button style={S.btn(C.purple)} onClick={() => generateEmail("offre15")}>👑 -15% VIP</button>
                   </div>
                 </div>
+                <div style={{ borderTop:"1px solid #ffffff15", paddingTop:"10px", marginTop:"8px" }}>
+                  <button style={{ ...S.btn(C.yellow), width:"100%", fontSize:"13px" }}
+                    onClick={() => setEmailTpl({ subject:"", body:`Bonjour ${selected.name.split(" ")[0]},\n\n\n\nL'équipe Munchy's Candy` })}>
+                    ✍️ Créer un email libre (from scratch)
+                  </button>
+                </div>
                 {emailTpl && <>
-                  <div style={{ fontSize:"11px", color:C.muted, marginTop:"14px", marginBottom:"4px" }}>📩 Objet :</div>
-                  <input style={{ ...S.input, marginBottom:"8px" }} value={emailTpl.subject} onChange={e => setEmailTpl(p => ({...p, subject:e.target.value}))} />
-                  <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>✏️ Message (modifiable) :</div>
-                  <textarea style={{ ...S.input, minHeight:"180px", resize:"vertical", lineHeight:"1.7", fontSize:"12px", whiteSpace:"pre-wrap" }} value={emailTpl.body} onChange={e => setEmailTpl(p => ({...p, body:e.target.value}))} />
-                  <div style={{ display:"flex", gap:"8px", marginTop:"8px", flexWrap:"wrap" }}>
-                    <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
-                    <button style={{ ...S.btn(sendingId===selected?.id?C.muted:C.green), fontSize:"11px" }}
-                      disabled={sendingId===selected?.id}
-                      onClick={() => sendEmail(selected.email, emailTpl.subject, emailTpl.body, selected.id, { customerId: selected.id })}>
-                      {sendingId===selected?.id ? "⏳ Envoi..." : "📧 Envoyer à "+selected.name.split(" ")[0]}
-                    </button>
+                  <div style={{ marginTop:"14px" }}>
+                    <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>📩 Objet :</div>
+                    <input style={{ ...S.input, marginBottom:"10px" }}
+                      placeholder="Objet de l'email..."
+                      value={emailTpl.subject}
+                      onChange={e => setEmailTpl(p => ({...p, subject:e.target.value}))} />
+                    <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>✏️ Message :</div>
+                    <textarea
+                      style={{ ...S.input, minHeight:"200px", resize:"vertical", lineHeight:"1.8", fontSize:"13px" }}
+                      value={emailTpl.body}
+                      onChange={e => setEmailTpl(p => ({...p, body:e.target.value}))} />
+                    <div style={{ display:"flex", gap:"8px", marginTop:"10px", flexWrap:"wrap" }}>
+                      <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => setEmailTpl(null)}>✕ Annuler</button>
+                      <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
+                      <button
+                        style={{ ...S.btn(!emailTpl.subject||!emailTpl.body||sendingId===selected?.id?C.muted:C.green), fontSize:"12px", flex:1 }}
+                        disabled={!emailTpl.subject||!emailTpl.body||sendingId===selected?.id}
+                        onClick={() => sendEmail(selected.email, emailTpl.subject, emailTpl.body, selected.id, { customerId: selected.id })}>
+                        {sendingId===selected?.id ? "⏳ Envoi..." : `📧 Envoyer à ${selected.name.split(" ")[0]}`}
+                      </button>
+                    </div>
+                    {sendMsg && <div style={S.msg(sendMsg.type)}>{sendMsg.text}</div>}
                   </div>
-                  {sendMsg && <div style={S.msg(sendMsg.type)}>{sendMsg.text}</div>}
                 </>}
               </div>
               <div style={S.sec}>
