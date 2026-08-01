@@ -786,8 +786,10 @@ function MainApp() {
                   </div>
                 </div>
                 {emailTpl && <>
-                  <div style={{ fontWeight:"bold", fontSize:"12px", marginTop:"14px", color:C.yellow }}>📩 Objet : {emailTpl.subject}</div>
-                  <div style={{ background:C.cardLight, borderRadius:"10px", padding:"12px", fontSize:"12px", lineHeight:"1.8", whiteSpace:"pre-wrap", border:"1px solid #ffffff15", marginTop:"6px" }}>{emailTpl.body}</div>
+                  <div style={{ fontSize:"11px", color:C.muted, marginTop:"14px", marginBottom:"4px" }}>📩 Objet :</div>
+                  <input style={{ ...S.input, marginBottom:"8px" }} value={emailTpl.subject} onChange={e => setEmailTpl(p => ({...p, subject:e.target.value}))} />
+                  <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>✏️ Message (modifiable) :</div>
+                  <textarea style={{ ...S.input, minHeight:"180px", resize:"vertical", lineHeight:"1.7", fontSize:"12px", whiteSpace:"pre-wrap" }} value={emailTpl.body} onChange={e => setEmailTpl(p => ({...p, body:e.target.value}))} />
                   <div style={{ display:"flex", gap:"8px", marginTop:"8px", flexWrap:"wrap" }}>
                     <button style={{ ...S.btn(C.muted), fontSize:"11px" }} onClick={() => navigator.clipboard?.writeText(`Objet: ${emailTpl.subject}\n\n${emailTpl.body}`)}>📋 Copier</button>
                     <button style={{ ...S.btn(sendingId===selected?.id?C.muted:C.green), fontSize:"11px" }}
