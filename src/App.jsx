@@ -376,7 +376,7 @@ function MainApp() {
     for (const c of customers) {
       if (!c.email) continue;
       const tier = getTier(c.cagnotte);
-      const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : groupTpl.body;
+      const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : (groupTpl.body||"").replace(/\{nom\}/g, c.name.split(" ")[0]);
       try {
         const r = await fetch('/api/send-email', {
           method: 'POST',
@@ -842,6 +842,15 @@ function MainApp() {
             {groupTpl && groupTpl !== "pending" && (
               <div style={S.sec}>
                 <div style={S.stitle}>📬 {customers.length} clients</div>
+                {/* Sujet et message éditables */}
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>📩 Objet :</div>
+                <input style={{ ...S.input, marginBottom:"10px" }}
+                  value={groupTpl.subject}
+                  onChange={e => setGroupTpl(p => ({...p, subject:e.target.value}))} />
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>✏️ Message (modifiable — {"{nom}"} sera remplacé par le prénom) :</div>
+                <textarea style={{ ...S.input, minHeight:"150px", resize:"vertical", lineHeight:"1.8", fontSize:"13px", marginBottom:"12px" }}
+                  value={typeof groupTpl.body === "function" ? groupTpl.body("{nom}", {discount:""}) : groupTpl.body}
+                  onChange={e => setGroupTpl(p => ({...p, body: e.target.value}))} />
                 {/* Bouton Envoyer à tous */}
                 <button
                   style={{ ...S.btn(sendingAll ? C.muted : C.green), marginBottom:"14px", width:"100%", padding:"12px", fontSize:"13px" }}
@@ -853,7 +862,7 @@ function MainApp() {
 
                 {customers.map(c => {
                   const tier = getTier(c.cagnotte);
-                  const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : groupTpl.body;
+                  const body = typeof groupTpl.body === "function" ? groupTpl.body(c.name.split(" ")[0], tier) : (groupTpl.body||"").replace(/\{nom\}/g, c.name.split(" ")[0]);
                   const full = `Objet: ${groupTpl.subject}\n\n${body}`;
                   const alreadySent = sentIds.includes(c.id);
                   return <div key={c.id} style={{ background:C.cardLight, borderRadius:"12px", padding:"12px", marginBottom:"8px", border:`1px solid ${alreadySent?"#00E67633":"#ffffff10"}` }}>
