@@ -130,6 +130,23 @@ function MainApp() {
   });
   const [sendingAll,   setSendingAll]   = useState(false);
   const [sendAllMsg,   setSendAllMsg]   = useState(null);
+  const [editCust,     setEditCust]     = useState(null);
+
+  async function saveEditCust() {
+    if (!editCust.name || !editCust.email) return;
+    setSaveStatus("saving");
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/customers?id=eq.${editCust.id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ name: editCust.name, email: editCust.email, phone: editCust.phone||"", birthday: editCust.birthday||null }),
+      });
+      setCustomers(prev => prev.map(c => c.id === editCust.id ? { ...c, name:editCust.name, email:editCust.email, phone:editCust.phone, birthday:editCust.birthday } : c));
+      if (selected?.id === editCust.id) setSelected(prev => ({ ...prev, name:editCust.name, email:editCust.email, phone:editCust.phone, birthday:editCust.birthday }));
+      setEditCust(null);
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
+  }
   const scannerRef = useRef(null);
 
   function markSent(id) {
@@ -443,6 +460,36 @@ function MainApp() {
 
   return (
     <div style={S.app}>
+      {/* MODAL MODIFIER CLIENT */}
+      {editCust && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px" }}>
+          <div style={{ background:C.card, borderRadius:"20px", padding:"24px", width:"100%", maxWidth:"420px", border:"1px solid #ffffff15" }}>
+            <div style={{ fontSize:"16px", fontWeight:"bold", color:C.yellow, marginBottom:"16px" }}>✏️ Modifier — {editCust.name}</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px", marginBottom:"16px" }}>
+              <div>
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>Nom complet *</div>
+                <input style={S.input} value={editCust.name} onChange={e => setEditCust(p => ({...p, name:e.target.value}))} />
+              </div>
+              <div>
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>Email *</div>
+                <input style={S.input} type="email" value={editCust.email} onChange={e => setEditCust(p => ({...p, email:e.target.value}))} />
+              </div>
+              <div>
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>Téléphone</div>
+                <input style={S.input} value={editCust.phone||""} onChange={e => setEditCust(p => ({...p, phone:e.target.value}))} />
+              </div>
+              <div>
+                <div style={{ fontSize:"11px", color:C.muted, marginBottom:"4px" }}>🎂 Date de naissance</div>
+                <input type="date" style={S.input} value={editCust.birthday||""} onChange={e => setEditCust(p => ({...p, birthday:e.target.value}))} />
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button style={{ ...S.btn(C.muted), flex:1 }} onClick={() => setEditCust(null)}>Annuler</button>
+              <button style={{ ...S.btn(C.green), flex:1 }} onClick={saveEditCust}>💾 Sauvegarder</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={S.header}>
         <div style={{ fontSize:"34px" }}>🍬</div>
         <div style={{ flex:1 }}>
@@ -624,6 +671,7 @@ function MainApp() {
                     <div style={{ display:"flex", gap:"8px", marginTop:"14px", flexWrap:"wrap" }}>
                       <button style={{ ...S.btn(C.green), fontSize:"11px", padding:"7px 12px" }} onClick={() => { setSelected(c); setTab("achat"); }}>💰 Achat</button>
                       <button style={{ ...S.btn(C.purple), fontSize:"11px", padding:"7px 12px" }} onClick={() => { setSelected(c); setTab("emails"); }}>📧 Email</button>
+                      <button style={{ ...S.btn(C.blue), fontSize:"11px", padding:"7px 12px" }} onClick={() => setEditCust({...c})}>✏️ Modifier</button>
                       {deleteConfirm === c.id
                         ? <><button style={{ ...S.btn("#ff4444"), fontSize:"11px", padding:"7px 12px" }} onClick={() => deleteCustomer(c.id)}>Confirmer ✕</button>
                            <button style={{ ...S.btn(C.muted), fontSize:"11px", padding:"7px 12px" }} onClick={() => setDeleteConfirm(null)}>Annuler</button></>
@@ -899,3 +947,4 @@ function MainApp() {
     </div>
   );
 }
+
